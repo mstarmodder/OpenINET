@@ -28,7 +28,7 @@ you should see 'OpenINET>' prompt on your screen
 
 + when scan completes you should see your network in the list
 
-+ type 'netconf set "<ssid>" "<password">' double quotes are neccessary to allow spaces in the ssid/password
++ type 'netconf set "<ssid>" "<password>"' double quotes are neccessary to allow spaces in the ssid/password
 
 + exit out of the terminal (on tio: ctrl+t q)
 
