@@ -34,3 +34,6 @@ expand on linux
 add support for esp32-s3 (can emulate a device so uart and driver in background is not needed)
 
 add netblock <ip> <-- blocks requests for certain ip addresses
+
+#  problems
+linux driver broken
