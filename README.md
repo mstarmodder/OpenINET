@@ -14,7 +14,7 @@ esp32 is stable enough to be a usb dongle
 + low system requirements
 
 # downsides
-- slow network (on esp-wroom-32 uart is used as a bridge which is VERY slow, maximum speed is about 46Kb/s which is slower than dial-up)
+- slow network (on esp-wroom-32 uart is used as a bridge which is VERY slow, maximum speed is about 8.2Kb/s which is slower than dial-up)
 
 - requires driver/program launched in the background (in case of using uart bridge)
 
