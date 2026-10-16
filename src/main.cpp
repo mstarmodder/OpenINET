@@ -1,18 +1,24 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <Preferences.h>
+#include <esp_attr.h>
+#include <esp_system.h>
 #include <stdarg.h>
 #include <vector>
 #include "bridge.h"
 
-#define BOOT_PIN     0
-// boot button fully resets the thing, wifi config too
-#define PROMPT       "OpenINET> "
-#define DEFAULT_BAUD 460800
+#define BOOT_PIN        0
+#define PROMPT          "OpenINET> "
+#define DEFAULT_BAUD    460800
+#define SETUP_WINDOW_MS 3000              // time after boot to press boot for the setup shell
+#define SHELL_MAGIC     0x4F49534CUL      // use rtc to save config
 
 static char   inputBuffer[128];
 static size_t bufIndex = 0;
 static Preferences prefs;
+
+static RTC_NOINIT_ATTR uint32_t rtcShellFlag;
+static bool g_bridgeMode = false;
 
 // fix bs with some terminals tabbing the text
 static void cputs(const char *s) {
@@ -98,7 +104,8 @@ static void cmdNetconf(const std::vector<String> &a) {
         }
     }
     else if (a.size() >= 2 && a[1].equalsIgnoreCase("forget")) {
-        prefs.clear();
+        prefs.remove("ssid");
+        prefs.remove("pass");
         WiFi.disconnect(true);
         cputs("credentials erased\n");
     }
@@ -114,14 +121,16 @@ static void cmdNetconf(const std::vector<String> &a) {
     }
 }
 
+// netstart [baud] giving a baud saves it the saved baud is also used for the automatic start at boot
 static void cmdNetstart(const std::vector<String> &a) {
-    uint32_t baud = DEFAULT_BAUD;
+    uint32_t baud = prefs.getUInt("baud", DEFAULT_BAUD);
     if (a.size() >= 2) {
         baud = (uint32_t)a[1].toInt();
         if (baud < 115200 || baud > 921600) {
             cputs("baud must be 115200..921600\n");
             return;
         }
+        prefs.putUInt("baud", baud);
     }
     String ssid = prefs.getString("ssid", "");
     if (ssid.length() == 0) {
@@ -129,8 +138,10 @@ static void cmdNetstart(const std::vector<String> &a) {
         return;
     }
     cprintf("bridge mode on \"%s\" at %u baud, no more text output.\n"
-    "BOOT button returns to the shell.\n", ssid.c_str(), (unsigned)baud);
+    "Press BOOT to return to the shell. Without a key press the bridge now starts by itself at boot.\n",
+            ssid.c_str(), (unsigned)baud);
     Serial.flush();
+    g_bridgeMode = true;
     bridgeRun(baud, ssid, prefs.getString("pass", ""));   // does not return
 }
 
@@ -149,14 +160,25 @@ static void processCommand(String command) {
     else                                       cputs("unknown command.\n");
 }
 
+// reboot and stay in the setup shell
+void rebootToShell() {
+    rtcShellFlag = SHELL_MAGIC;
+    Serial.flush();
+    ESP.restart();
+}
+
+// short press in bridge mode > reboot into the setup shell
+//note: dont be dumb pressing boot key before boot will throw you in download mode
+// has to be pressed after boot inside the timeout window
 void checkBootButton() {
     static uint32_t pressedSince = 0;
     if (digitalRead(BOOT_PIN) == LOW) {
         if (pressedSince == 0) pressedSince = millis();
-        else if (millis() - pressedSince > 200) ESP.restart();   // debounced
-        prefs.clear();
-        WiFi.disconnect(true); // oh noes! it forgot the network!
     } else {
+        if (pressedSince && millis() - pressedSince > 50) {
+            if (g_bridgeMode) rebootToShell();
+            else ESP.restart();
+        }
         pressedSince = 0;
     }
 }
@@ -164,7 +186,6 @@ void checkBootButton() {
 void setup() {
     pinMode(BOOT_PIN, INPUT_PULLUP);
     Serial.begin(115200);
-    cputs("\nOpenINET project\n\n");
 
     prefs.begin("openinet", false);
     WiFi.persistent(false);          // manage credentials yourself hmph!
@@ -172,6 +193,35 @@ void setup() {
     WiFi.mode(WIFI_STA);
 
     String ssid = prefs.getString("ssid", "");
+
+    bool shell = false;
+    if (esp_reset_reason() == ESP_RST_SW && rtcShellFlag == SHELL_MAGIC) shell = true;   // asked for by boot/exit
+    rtcShellFlag = 0;
+    if (ssid.length() == 0) shell = true;                                                // nothing to bridge yet
+
+    // setup key wait a moment for boot otherwise go straight to the bridge
+    if (!shell) {
+        cputs("\nOpenINET: press BOOT within 3 s for setup\n");
+        uint32_t t0 = millis();
+        while (millis() - t0 < SETUP_WINDOW_MS) {
+            if (digitalRead(BOOT_PIN) == LOW) {
+                delay(40);
+                if (digitalRead(BOOT_PIN) == LOW) {
+                    shell = true;
+                    while (digitalRead(BOOT_PIN) == LOW) delay(10);   // wait for release or it would reboot
+                    break;
+                }
+            }
+            delay(5);
+        }
+    }
+
+    if (!shell) {
+        g_bridgeMode = true;
+        bridgeRun(prefs.getUInt("baud", DEFAULT_BAUD), ssid, prefs.getString("pass", ""));   // does not return
+    }
+
+    cputs("\nOpenINET project\n\n");
     if (ssid.length() > 0) {
         cprintf("saved network: %s\n", ssid.c_str());
         WiFi.begin(ssid.c_str(), prefs.getString("pass", "").c_str());  // non blocking

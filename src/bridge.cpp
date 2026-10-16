@@ -23,17 +23,31 @@ struct Frame {
     uint8_t  data[];
 };
 
+// TX queue is limited by bytes
+// eat queue slots
+constexpr uint32_t OI_TXQ_BYTES  = 24 * 1024;
+constexpr uint32_t OI_TXQ_FRAMES = 128;
+
 static QueueHandle_t txq;
 static uint8_t       staMac[6];
 static volatile bool wifiUp = false;
+static volatile uint32_t queuedBytes   = 0;
+static volatile uint32_t droppedFrames = 0;
+static volatile uint32_t wifiTxFail    = 0;   // diagnostics
+static volatile uint32_t uartTxBytes   = 0;   // ^ needed for debug you know
+static volatile uint32_t uartRxBytes   = 0;
 
 static bool enqueue(uint8_t type, const uint8_t *data, uint16_t len) {
+    if (queuedBytes + len > OI_TXQ_BYTES) { droppedFrames++; return false; }   // full > drop
+
     Frame *f = (Frame *)malloc(sizeof(Frame) + len);
-    if (!f) return false;
+    if (!f) { droppedFrames++; return false; }
     f->type = type;
     f->len  = len;
     if (len) memcpy(f->data, data, len);
-    if (xQueueSend(txq, &f, 0) != pdTRUE) { free(f); return false; }   // queue full > drop
+
+    if (xQueueSend(txq, &f, 0) != pdTRUE) { free(f); droppedFrames++; return false; }
+    __atomic_add_fetch(&queuedBytes, len, __ATOMIC_RELAXED);
     return true;
 }
 
@@ -60,6 +74,8 @@ static void txTask(void *) {
         enc[n++] = OI_SLIP_END;
 
         Serial.write(enc, n);
+        __atomic_add_fetch(&uartTxBytes, (uint32_t)n, __ATOMIC_RELAXED);
+        __atomic_sub_fetch(&queuedBytes, f->len, __ATOMIC_RELAXED);
         free(f);
     }
 }
@@ -77,6 +93,19 @@ static void sendHello() {
     memcpy(p + 1, staMac, 6);
     p[7] = wifiUp ? 1 : 0;
     enqueue(OI_T_HELLO, p, sizeof(p));
+}
+
+// diagnostics
+static void sendStats() {
+    uint32_t v[5] = { droppedFrames, wifiTxFail, uartTxBytes, uartRxBytes, (uint32_t)Serial.baudRate() };
+    uint8_t p[20];
+    for (int i = 0; i < 5; i++) {
+        p[i * 4]     = v[i] >> 24;
+        p[i * 4 + 1] = v[i] >> 16;
+        p[i * 4 + 2] = v[i] >> 8;
+        p[i * 4 + 3] = v[i];
+    }
+    enqueue(OI_T_STATS, p, sizeof(p));
 }
 
 // uart > wifi
@@ -98,9 +127,11 @@ static void handleBody(const uint8_t *b, size_t n) {
 
     switch (b[0]) {
         case OI_T_DATA:
-            if (wifiUp && plen >= 14)
-                esp_wifi_internal_tx(WIFI_IF_STA, (void *)payload, (uint16_t)plen);
-        break;
+            if (wifiUp && plen >= 14) {
+                if (esp_wifi_internal_tx(WIFI_IF_STA, (void *)payload, (uint16_t)plen) != ESP_OK)
+                    wifiTxFail++;
+            }
+            break;
         case OI_T_PING:
             sendHello();
             break;
@@ -148,7 +179,7 @@ void bridgeRun(uint32_t baud, const String &ssid, const String &pass) {
     Serial.setRxBufferSize(8192);
     Serial.begin(baud);
 
-    txq = xQueueCreate(24, sizeof(Frame *));
+    txq = xQueueCreate(OI_TXQ_FRAMES, sizeof(Frame *));
     xTaskCreatePinnedToCore(txTask, "oi_tx", 4096, nullptr, 5, nullptr, 0);
 
     uint32_t startMs = millis(), lastTick = 0;
@@ -162,6 +193,7 @@ void bridgeRun(uint32_t baud, const String &ssid, const String &pass) {
         if (avail > 0) {
             uint8_t tmp[256];
             int n = Serial.readBytes(tmp, min(avail, (int)sizeof(tmp)));
+            uartRxBytes += n;
             for (int i = 0; i < n; i++) feed(tmp[i]);
         } else {
             vTaskDelay(1);
@@ -179,6 +211,9 @@ void bridgeRun(uint32_t baud, const String &ssid, const String &pass) {
             // announce until the host answer and immediately on link change
             if (!gotHost || wifiUp != lastUp) sendHello();
             lastUp = wifiUp;
+
+            static uint32_t lastStats = 0;
+            if (gotHost && now - lastStats >= 1000) { lastStats = now; sendStats(); }
 
             if (gotHost && now - lastHostMs > 10000) ESP.restart();   // host vanished
             if (!gotHost && now - startMs > 60000)   ESP.restart();   // nobody ever came

@@ -2,18 +2,20 @@
 #include <stdint.h>
 #include <stddef.h>
 
-// Wire format: slip framed (0xC0 delimiters), body = type : payload : crc16 big endian
-// crc16 (CCITT-FALSE) covers type and payload. Garbage between frames is ignored.
+// v Wire format:
+// slip framed (0xC0 delimiters), body = type : payload : crc16 big endian
+// crc16 (CCITT-FALSE) covers type and payload Garbage between frames is ignored.
 
 constexpr uint8_t OI_SLIP_END     = 0xC0;
 constexpr uint8_t OI_SLIP_ESC     = 0xDB;
 constexpr uint8_t OI_SLIP_ESC_END = 0xDC;
 constexpr uint8_t OI_SLIP_ESC_ESC = 0xDD;
 
-constexpr uint8_t OI_T_DATA  = 0x01;  // one raw Ethernet frame
-constexpr uint8_t OI_T_HELLO = 0x02;  // esp > host: [ver][mac x6][link]   (also the reply to PING)
+constexpr uint8_t OI_T_DATA  = 0x01;  // one raw ethernet frame
+constexpr uint8_t OI_T_HELLO = 0x02;  // esp > host: [ver][mac x6][link]e
 constexpr uint8_t OI_T_PING  = 0x04;  // host > esp: keepalive
-constexpr uint8_t OI_T_EXIT  = 0x05;  // host > esp: leave bridge mode (esp reboots into the shell)
+constexpr uint8_t OI_T_EXIT  = 0x05;  // host > esp: leave bridge mode
+constexpr uint8_t OI_T_STATS = 0x06;  // esp > host: 5x u32 big endian [drops][wifi tx fail][uart tx bytes][uart rx bytes][uart baud]
 
 constexpr uint8_t  OI_PROTO_VERSION = 1;
 constexpr size_t   OI_MAX_ETH  = 1600;
