@@ -22,6 +22,10 @@ steps to get it working:
 
 + run in terminal: tio -b 115200 /dev/tty<device_name>
 
++ reboot device and then after about a second press boot key or trigger whatever is on GPIO 0
+
+NOTE: if you press boot key for long enough device will factory reset (forget all network configuration)
+
 you should see 'OpenINET>' prompt on your screen
 
 + type 'netconf scan' and wait for scan to complete
