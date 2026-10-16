@@ -1,4 +1,3 @@
-// OpenINET host daemon for FreeBSD: bridges the ESP32 serial link to a tap(4) interface.
 // Build: c++ -O2 -std=c++17 -o openinetd_freebsd.cpp -o openinetd
 // Run: ./openinetd -d /dev/cuaU0 -b 460800 -i tap0
 
@@ -117,7 +116,7 @@ struct Session {
             if (tap >= 0) (void)!write(tap, p, n);
         } else if (type == OI_T_HELLO && n >= 8 && p[0] == OI_PROTO_VERSION) {
             bool up = p[7] != 0;
-            if (!gotHello || up != linkUp) printf("esp32: wifi %s\n", up ? "connected" : "disconnected");
+            if (!gotHello || up != linkUp) printf("dongle: wifi %s\n", up ? "connected" : "disconnected");
             gotHello = true;
             linkUp = up;
             setMac(p + 1);
@@ -141,12 +140,12 @@ static int openSerial(const char *path, unsigned baud) {
     int fd = open(path, O_RDWR | O_NOCTTY | O_NONBLOCK);
     if (fd < 0) return -1;
     if (!setBaud(fd, baud)) { close(fd); return -1; }
-    int bits = TIOCM_DTR | TIOCM_RTS;      // keep the auto-reset circuit released
+    int bits = TIOCM_DTR | TIOCM_RTS;      // keep the auto reset circuit released
     ioctl(fd, TIOCMBIC, &bits);
     return fd;
 }
 
-// One poll round. Returns false on a fatal serial error (unplugged, etc.)
+// One poll round returns false on a fatal serial error
 static bool step(Session &s, int timeoutMs, bool useTap) {
     pollfd p[2];
     p[0] = {s.ser, (short)(POLLIN | (s.pending() ? POLLOUT : 0)), 0};
@@ -262,7 +261,7 @@ int main(int argc, char **argv) {
     {
         struct sigaction sa;
         memset(&sa, 0, sizeof(sa));
-        sa.sa_handler = onSignal;          // no SA_RESTART: poll() must wake up
+        sa.sa_handler = onSignal;          // no SA_RESTART poll() must wake up
         sigaction(SIGINT, &sa, nullptr);
         sigaction(SIGTERM, &sa, nullptr);
     }
@@ -280,7 +279,7 @@ int main(int argc, char **argv) {
 
     while (!g_stop) {
         if (!connectEsp(s, dev, baud)) { sleep(2); continue; }
-        printf("bridge running (Ctrl-C to stop and return the esp32 to its shell)\n");
+        printf("bridge running (Ctrl-C to stop and return the dongle to its shell)\n");
 
         long lastPing = nowMs();
         while (!g_stop) {
@@ -291,7 +290,7 @@ int main(int argc, char **argv) {
                 s.flush();
                 lastPing = now;
             }
-            if (now - s.lastRx > 8000) { fprintf(stderr, "esp32 stopped responding\n"); break; }
+            if (now - s.lastRx > 8000) { fprintf(stderr, "dongle stopped responding\n"); break; }
         }
         if (g_stop) {
             s.send(OI_T_EXIT, nullptr, 0);
