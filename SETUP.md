@@ -12,7 +12,7 @@ steps to get it working:
 
 + run in the terminal: pio run -t upload <-- remove the '-t upload' if you want to just build the firmware but not flash it
 
-+ after that run in terminal: g++ -O2 -std=c++17 host/openinetd_<OS>.cpp -o openinetd
++ after that run in terminal: clang++ -O2 -std=c++17 host/openinetd_<OS>.cpp -o openinetd
 
 # and if you did everything correctly and everything compiled continue on to the next step(s)
 
