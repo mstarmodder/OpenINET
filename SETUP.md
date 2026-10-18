@@ -25,6 +25,7 @@ steps to get it working:
 + reboot device and then after about a second press boot key or trigger whatever is on GPIO 0
 
 NOTE: if you press boot key for long enough device will factory reset (forget all network configuration)
+NOTE 2: if you press boot key before booting you will go into download mode
 
 you should see 'OpenINET>' prompt on your screen
 
