@@ -40,6 +40,10 @@ you should see 'OpenINET>' prompt on your screen
 
 after that you can either switch terminals or launch the program as background process
 
++ type in terminal: 'ifconfig' and look for you network device "tap0"
+
++ type in terminal: 'dhclient tap0'
+
 # done!
 now setup is done and you can test network connection by typing in terminal: 'ping gnu.org' (gnu.org as an example)
 
