@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include <Arduino.h>
 #include <WiFi.h>
 #include <Preferences.h>
@@ -155,7 +157,7 @@ static void processCommand(String command) {
     if (cmd.equalsIgnoreCase("netconf"))       cmdNetconf(a);
     else if (cmd.equalsIgnoreCase("netstart")) cmdNetstart(a);
     else if (cmd.equalsIgnoreCase("netblock")) cputs("not implemented yet\n");
-    else if (cmd.equalsIgnoreCase("reset"))    { cputs("restarting...\n"); Serial.flush(); ESP.restart(); }
+    else if (cmd.equalsIgnoreCase("reset"))    { cputs("restarting\n"); Serial.flush(); ESP.restart(); }
     else if (cmd.equalsIgnoreCase("help"))     cputs("commands: netconf, netstart [baud], netblock, reset, help\n");
     else                                       cputs("unknown command.\n");
 }

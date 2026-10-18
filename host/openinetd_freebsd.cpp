@@ -1,4 +1,6 @@
-// Build: c++ -O2 -std=c++17 -o openinetd_freebsd.cpp -o openinetd
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+// Build: c++ -O2 -std=c++17 openinetd_freebsd.cpp -o openinetd
 // Run: ./openinetd -d /dev/cuaU0 -b 460800 -i tap0
 
 #include <sys/types.h>
@@ -120,6 +122,19 @@ struct Session {
             gotHello = true;
             linkUp = up;
             setMac(p + 1);
+        } else if (type == OI_T_STATS && n >= 16) {
+            auto rd = [&](int i) {
+                return ((uint32_t)p[i] << 24) | ((uint32_t)p[i + 1] << 16) | ((uint32_t)p[i + 2] << 8) | p[i + 3];
+            };
+            static uint32_t prev[4] = {0, 0, 0, 0};
+            uint32_t cur[4] = { rd(0), rd(4), rd(8), rd(12) };
+            uint32_t d[4];
+            for (int i = 0; i < 4; i++) d[i] = cur[i] >= prev[i] ? cur[i] - prev[i] : cur[i];   // esp rebooted
+            memcpy(prev, cur, sizeof(prev));
+            printf("dongle: drops +%u  wifi-tx-fail +%u  uart-out %u B/s  uart-in %u B/s",
+                   d[0], d[1], d[2], d[3]);
+            if (n >= 20) printf("  (dongle uart baud %u)", rd(16));
+            printf("\n");
         }
     }
 };
@@ -223,6 +238,10 @@ static bool connectEsp(Session &s, const char *dev, unsigned baud) {
     writeAll(s.ser, cmd);
     usleep(700 * 1000);
     setBaud(s.ser, baud);
+    {
+        termios t;
+        if (tcgetattr(s.ser, &t) == 0) printf("host serial speed: %u baud\n", (unsigned)cfgetospeed(&t));
+    }
     tcflush(s.ser, TCIFLUSH);
     s.resetLink();
 
